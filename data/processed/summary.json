@@ -1,0 +1,12 @@
+[
+  {
+    "language": "hi",
+    "queries": 800,
+    "passages": 7952
+  },
+  {
+    "language": "ta",
+    "queries": 800,
+    "passages": 7956
+  }
+]

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Voice RAG - MSMARCO-XI</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+  h1 { font-size: 1.4rem; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
+  button { padding: 10px 16px; font-size: 1rem; cursor: pointer; }
+  #recordBtn.recording { background: #d33; color: white; }
+  textarea { width: 100%; min-height: 60px; }
+  .box { border: 1px solid #8884; border-radius: 8px; padding: 12px; margin-top: 12px; white-space: pre-wrap; }
+  .meta { font-size: 0.8rem; opacity: 0.7; }
+  select { padding: 6px; }
+</style>
+</head>
+<body>
+  <h1>Voice-Enabled RAG · MSMARCO-XI (Indic)</h1>
+  <p class="meta">Speak or type a question. Retrieval runs over a sample of the ai4bharat/MSMARCO-XI corpus.</p>
+
+  <div class="row">
+    <label>Language:
+      <select id="lang">
+        <option value="hi">Hindi</option>
+        <option value="ta">Tamil</option>
+      </select>
+    </label>
+    <button id="recordBtn">🎤 Record</button>
+  </div>
+
+  <div class="row">
+    <textarea id="typedQuery" placeholder="...or type a question here"></textarea>
+    <button id="sendTextBtn">Ask</button>
+  </div>
+
+  <div id="output" class="box" style="display:none"></div>
+
+  <script>
+    const recordBtn = document.getElementById('recordBtn');
+    const sendTextBtn = document.getElementById('sendTextBtn');
+    const typedQuery = document.getElementById('typedQuery');
+    const output = document.getElementById('output');
+    const langSel = document.getElementById('lang');
+
+    let mediaRecorder, chunks = [];
+
+    function renderResult(r) {
+      output.style.display = 'block';
+      const lines = [];
+      if (r.transcript) lines.push('Transcript: ' + r.transcript);
+      lines.push('');
+      lines.push(r.refused ? ('Refused (' + r.refusal_reason + '): ' + r.answer) : ('Answer: ' + r.answer));
+      if (r.citations && r.citations.length) lines.push('\nCitations: ' + r.citations.join(', '));
+      lines.push('\n--- latency ---');
+      lines.push('retrieval: ' + (r.retrieval_latency_ms ?? '-').toString().slice(0,6) + ' ms');
+      lines.push('total: ' + r.total_latency_ms.toString().slice(0,6) + ' ms');
+      output.textContent = lines.join('\n');
+    }
+
+    recordBtn.addEventListener('click', async () => {
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        recordBtn.classList.remove('recording');
+        recordBtn.textContent = '🎤 Record';
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      chunks = [];
+      mediaRecorder.ondataavailable = e => chunks.push(e.data);
+      mediaRecorder.onstop = async () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        const fd = new FormData();
+        fd.append('file', blob, 'audio.webm');
+        fd.append('language', langSel.value);
+        output.style.display = 'block';
+        output.textContent = 'Transcribing + retrieving...';
+        const res = await fetch('/query', { method: 'POST', body: fd });
+        renderResult(await res.json());
+      };
+      mediaRecorder.start();
+      recordBtn.classList.add('recording');
+      recordBtn.textContent = '⏺ Stop';
+    });
+
+    sendTextBtn.addEventListener('click', async () => {
+      const text = typedQuery.value.trim();
+      if (!text) return;
+      output.style.display = 'block';
+      output.textContent = 'Retrieving...';
+      const fd = new FormData();
+      fd.append('text', text);
+      fd.append('language', langSel.value);
+      const res = await fetch('/query_text', { method: 'POST', body: fd });
+      renderResult(await res.json());
+    });
+  </script>
+</body>
+</html>

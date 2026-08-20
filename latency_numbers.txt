@@ -1,0 +1,31 @@
+Latest latency benchmark (150 runs, languages: hi, ta) -- run AFTER the guardrail fixes
+described in log.txt (unsafe-regex broadening, grounding pre-check now uses raw dense
+cosine similarity instead of the structurally-constant RRF rank score, empty-query
+handling fix in app/server.py). Superseded values from the earlier pre-fix run are kept
+below for audit history.
+
+retrieval_only_ms:
+  p50: 39.33840000536293 ms
+  p70: 42.97249997034669 ms
+  p100: 354.2180000222288 ms
+  under_200ms_target_pct: 98.61111111111111%
+
+end_to_end_ms:
+  p50: 302.48429998755455 ms
+  p70: 331.4230000250973 ms
+  p100: 1264.0413000481203 ms
+
+refusal_rate_pct: 4.0%
+  (up from 1.3333333333333333% pre-fix -- see log.txt for why; per-kind breakdown from
+  eval/results/latency_raw.csv: in_domain 2/142 refused (false positives from the
+  raised anchor-similarity floor, ~1.4% FP rate), unsafe 2/2 refused, off_topic 1/4
+  refused, gibberish 0/1 refused, empty 1/1 refused)
+
+Target check:
+  retrieval_only_ms.p100 < 200 ms: FAIL (354.2180000222288 ms)
+  Percentage of retrievals under 200 ms: 98.61111111111111%
+
+--- Superseded (pre guardrail-fix) run, kept for audit history ---
+retrieval_only_ms: p50=70.33319998299703 p70=75.32810000702739 p100=377.43749999208376 under_200ms_target_pct=99.32432432432432%
+end_to_end_ms: p50=583.6418999824673 p70=619.0014000167139 p100=943.0762999691069
+refusal_rate_pct: 1.3333333333333333%

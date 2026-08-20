@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.cache/
+*.gguf
+.pytest_cache/
+
+# data/processed/ and indexes/ are intentionally NOT ignored: the sampled corpus and
+# its prebuilt indexes are small (see README "Data scope") and are committed so the
+# HF Space can start without re-running the data pipeline at build/boot time.

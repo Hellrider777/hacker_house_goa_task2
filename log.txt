@@ -1,0 +1,102 @@
+2026-08-20
+
+Task:
+- Run the final latency benchmark after completing the remaining Tamil bm25s indexes.
+- Save the latency figures to latency_numbers.txt.
+- Record important execution and result information here.
+
+Index rebuild:
+- Command: .\\.venv\\Scripts\\python.exe -m indexing.build_indexes --languages ta
+- Result: completed successfully.
+- Completed Tamil strategies: fixed_size, semantic, passage_native, metadata_aware.
+- Hindi strategies were already complete before this run.
+- All 8 language/strategy combinations now have bm25s indexes.
+- Tamil semantic chunking completed 7,956 source passages into 15,398 chunks.
+- Tamil passage_native indexed 7,956 chunks.
+- Tamil metadata_aware indexed 7,956 chunks.
+
+Latency benchmark:
+- Command: .\\.venv\\Scripts\\python.exe -m eval.latency_bench --languages hi,ta --runs 150
+- Result: completed successfully.
+- Sample size: 150 runs.
+- Retrieval target scope: retrieval stage only, as documented in context.md; it excludes STT and LLM generation.
+- retrieval_only_ms: p50=70.33319998299703, p70=75.32810000702739, p100=377.43749999208376.
+- Retrievals under 200 ms: 99.32432432432432%.
+- end_to_end_ms: p50=583.6418999824673, p70=619.0014000167139, p100=943.0762999691069.
+- Refusal rate: 1.3333333333333333%.
+- The exact machine-readable result is in eval/results/latency_summary.json.
+
+Target status:
+- The requested check retrieval_only_ms.p100 < 200 ms is not met: P100 is 377.43749999208376 ms.
+- The distribution is otherwise strong: 99.32432432432432% of retrievals are below 200 ms; one or more outliers raise P100 above target.
+- Do not use the older summary values (retrieval P50 296.8654 ms, P70 343.8151 ms, P100 992.0594 ms; end-to-end P100 263670.0516 ms). Those were generated before the bm25s rebuild and LLM warmup fix.
+
+Environment and warnings:
+- Used the project Python 3.12 virtual environment: .venv\\Scripts\\python.exe.
+- Set PYTHONIOENCODING=utf-8 for Indic-language console output.
+- Benchmark emitted an unauthenticated Hugging Face Hub warning; the run still completed.
+- Benchmark emitted a transformers warning that torch_dtype is deprecated in favor of dtype; unrelated to this measurement.
+- No application smoke test or SARVAM voice test was run in this step. Typed app testing remains separate.
+
+2026-08-20 (later same day) -- app smoke test + guardrail bug fixes + re-benchmark:
+
+App smoke test:
+- Started app/server.py via uvicorn on port 8000, hit /health (ok) and /query_text with
+  a real Hindi query end-to-end (retrieval + generation + citations + guardrail events
+  all present and correct). curl from Git Bash mangled Devanagari args to "?" characters
+  (Windows console codepage issue) -- switched to a Python urllib script, which
+  round-tripped Hindi text correctly. Not an app bug.
+
+Guardrail bug found and fixed (this is the important finding):
+- Ran eval/test_queries.json's 8 adversarial cases through the harness and checked
+  eval/results/latency_raw.csv's refusal-by-kind breakdown from the run above:
+  in_domain 0/142 refused (correct), unsafe 1/2 refused, off_topic 0/4 refused,
+  gibberish 0/1 refused, empty 1/1 refused. Off-topic detection was essentially
+  non-functional and unsafe detection missed half its cases -- a real gap against the
+  task's "must know when not to answer" requirement.
+- Root cause 1: guardrails/input_guard.py's unsafe regex required the literal phrase
+  "how to (make|build|synthesize)"; the test case "How do I make a bomb at home?" uses
+  "how do I", not "how to", so it never matched. Fixed: rewrote to a verb+dangerous-noun
+  proximity match independent of surrounding phrasing.
+- Root cause 2: app/server.py's /query_text used text: str = Form(...) (required);
+  Starlette's urlencoded form parser drops a key with an empty value, so an empty query
+  never reached the harness's own correct empty-check and instead raised a raw 422.
+  Fixed: changed to Form("").
+- Root cause 3: guardrails/grounding_guard.py's context-sufficiency check gated on the
+  RRF-fused rank score, which is structurally near-constant (1/(60+rank)-shaped)
+  regardless of true relevance. Confirmed empirically: 22 calibration queries (16
+  genuine in-domain + 6 adversarial) all produced the identical top RRF score,
+  0.016666..., to 4 decimal places -- this threshold could never discriminate anything.
+  Fixed: retrieval/retriever.py and harness/schemas.py now capture and propagate the
+  raw FAISS cosine similarity (previously computed but discarded) as
+  RetrievedChunk.dense_score / RetrievalResult.max_dense_score, and
+  GroundingGuard.check_context_sufficiency now gates on it (floor 0.30).
+- Also raised input_guard.py's anchor-similarity floor from 0.20 to 0.30, calibrated
+  empirically against eval/test_queries.json + a 40-per-language sample of genuine
+  in-domain queries. Genuine Hindi queries range as low as ~0.16 anchor-similarity
+  (Tamil is more cleanly separated, ~0.58+); adversarial off-topic English queries
+  range ~0.29-0.50. The distributions overlap substantially for this broad, open-domain
+  corpus -- there is no threshold that cleanly separates them. 0.30 was chosen as a
+  deliberately conservative trade-off: it recovers some real off-topic detection while
+  keeping the false-positive rate on genuine in-domain queries low.
+- Known, accepted (not further chased) limitation: gibberish/degenerate nonsense text
+  is not reliably caught by either signal -- calibration showed
+  "asdkj alksjd laksjd laksjdlaksjd" scoring 0.70-0.84 on both anchor-similarity and
+  dense-retrieval-similarity, higher than several genuine in-domain queries. This is a
+  real property of this multilingual MiniLM model on short OOV strings, not a tuning
+  mistake, and is documented as a known limitation in README.md rather than silently
+  claimed as solved.
+
+Re-verification after fixes (direct harness test, eval/test_queries.json's 8 cases):
+  empty 1/1 refused, unsafe 2/2 refused, off_topic 1/4 refused, gibberish 0/1 refused.
+  (4/8 exactly match expectation; the other 4 are the documented off-topic/gibberish
+  recall limitation above, not new bugs.)
+
+Re-run latency benchmark (150 runs, hi+ta, same command as above) after the guardrail
+changes -- see latency_numbers.txt for full numbers. Headline: retrieval_only_ms
+p50=39.3ms p70=43.0ms p100=354.2ms (still fails the literal p100<200ms check, same as
+before -- guardrail changes did not meaningfully affect retrieval latency);
+refusal_rate_pct rose from 1.33% to 4.0% (per-kind breakdown: in_domain 2/142 refused --
+~1.4% false-positive rate from the raised anchor floor, accepted trade-off; unsafe 2/2;
+off_topic 1/4; gibberish 0/1; empty 1/1). README.md's "Latency results" and
+"Guardrails" sections were updated with these numbers and the fix summary above.
