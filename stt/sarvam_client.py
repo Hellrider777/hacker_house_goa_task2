@@ -20,7 +20,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from harness.schemas import STTResult
 
 SARVAM_STT_URL = "https://api.sarvam.ai/speech-to-text"
-DEFAULT_MODEL = os.environ.get("SARVAM_STT_MODEL", "saarika:v2")
+DEFAULT_MODEL = os.environ.get("SARVAM_STT_MODEL", "saarika:v2.5")
 REQUEST_TIMEOUT_S = float(os.environ.get("SARVAM_TIMEOUT_S", "15"))
 
 
