@@ -1,3 +1,13 @@
+---
+title: Voice RAG MSMARCO-XI
+emoji: 🎙️
+colorFrom: blue
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Voice-Enabled RAG on MSMARCO-XI
 
 HH Goa 2026 Shortlisting Task 2. A voice-enabled Retrieval-Augmented Generation system
